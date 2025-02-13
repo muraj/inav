@@ -220,6 +220,40 @@ static void crsfFrameGps(sbuf_t *dst)
 }
 
 /*
+CRSF frame has the structure:
+<Device address> <Frame length> <Type> <Payload> <CRC>
+Device address: (uint8_t)
+Frame length:   length in  bytes including Type (uint8_t)
+Type:           (uint8_t)
+CRC:            (uint8_t), crc of <Type> and <Payload>
+*/
+
+/*
+0x03 GPS_TIME
+Payload:
+int16_t     year
+uint8_t     month
+uint8_t     day
+uint8_t     hour
+uint8_t     minute
+uint8_t     second
+uint16_t    millisecond
+*/
+static void crsfFrameGpsTime(sbuf_t *dst)
+{
+    // use sbufWrite since CRC does not include frame length
+    sbufWriteU8(dst, CRSF_FRAME_GPS_PAYLOAD_SIZE + CRSF_FRAME_LENGTH_TYPE_CRC);
+    crsfSerialize8(dst, CRSF_FRAMETYPE_GPS_TIME);
+    crsfSerialize16(dst, gpsSol.time.year);
+    crsfSerialize8(dst, gpsSol.time.month);
+    crsfSerialize8(dst, gpsSol.time.day);
+    crsfSerialize8(dst, gpsSol.time.hours);
+    crsfSerialize8(dst, gpsSol.time.minutes);
+    crsfSerialize8(dst, gpsSol.time.seconds);
+    crsfSerialize16(dst, gpsSol.time.millis);
+}
+
+/*
 0x07 Vario sensor
 Payload:
 int16      Vertical speed ( cm/s )
@@ -469,9 +503,17 @@ static void processCrsf(void)
         crsfFinalize(dst);
     }
 #ifdef USE_GPS
+    static uint8_t gps_time_secs = 0;
     if (currentSchedule & BV(CRSF_FRAME_GPS_INDEX)) {
         crsfInitializeFrame(dst);
-        crsfFrameGps(dst);
+        // Only send the gps time every so often, 10 seconds is reasonable
+        if (gpsSol.time.seconds > gps_time_secs) {
+            crsfFrameGpsTime(dst);
+            gps_time_secs += 10;
+        }
+        else {
+            crsfFrameGps(dst);
+        }
         crsfFinalize(dst);
     }
 #endif
